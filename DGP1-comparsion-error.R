@@ -5,59 +5,59 @@ library(kableExtra)
 
 
 file_paths <- c(
-  "C:/Users/liyux/Desktop/result/DGP1-test/DGP1-smo_rem_time_result2.xlsx",
-  "C:/Users/liyux/Desktop/result/DGP1-test/DGP1-smo_rem+ma+XGBoost_time_result2.xlsx",
-  "C:/Users/liyux/Desktop/result/DGP1-test/WW_SVMICL_NHL_result2.xlsx",
-  "C:/Users/liyux/Desktop/result/DGP1-test/WW_SVMICH_NHL_result2.xlsx",
-  "C:/Users/liyux/Desktop/result/DGP1-test/WW_SCL_result.xlsx",
-  "C:/Users/liyux/Desktop/result/DGP1-test/WW_SCH_result.xlsx",
-  "C:/Users/liyux/Desktop/result/DGP1-test/DGP1-Bagging_time_result.xlsx",
-  "C:/Users/liyux/Desktop/result/DGP1-test/DGP1-Adaboosting_time_result2.xlsx",
-  "C:/Users/liyux/Desktop/result/DGP1-test/WW_UNIF_result.xlsx",
-  "C:/Users/liyux/Desktop/result/DGP1-test/DGP1-GBM_result.xlsx",
-  "C:/Users/liyux/Desktop/result/DGP1-test/DGP1-RF_result.xlsx"
+  "C:/Users/....../DGP1-test/DGP1-smo_rem_time_result2.xlsx",
+  "C:/Users/....../DGP1-test/DGP1-smo_rem+ma+XGBoost_time_result2.xlsx",
+  "C:/Users/.../Desktop/result/DGP1-test/WW_SVMICL_NHL_result2.xlsx",
+  "C:/Users/.../Desktop/result/DGP1-test/WW_SVMICH_NHL_result2.xlsx",
+  "C:/Users/.../Desktop/result/DGP1-test/WW_SCL_result.xlsx",
+  "C:/Users/.../Desktop/result/DGP1-test/WW_SCH_result.xlsx",
+  "C:/Users/.../Desktop/result/DGP1-test/DGP1-Bagging_time_result.xlsx",
+  "C:/Users/.../Desktop/result/DGP1-test/DGP1-Adaboosting_time_result2.xlsx",
+  "C:/Users//Desktop/result/DGP1-test/WW_UNIF_result.xlsx",
+  "C:/Users//Desktop/result/DGP1-test/DGP1-GBM_result.xlsx",
+  "C:/Users//Desktop/result/DGP1-test/DGP1-RF_result.xlsx"
 )
 
 # file_paths <- c(
-#   "C:/Users/liyux/Desktop/result/DGP2-test/DGP2-smo_rem_time_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/DGP2-test/DGP2-smo_rem+ma+XGBoost_time_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/DGP2-test/DGP2-WW_SVMICL_NHL_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/DGP2-test/DGP2-WW_SVMICH_NHL_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/DGP2-test/DGP2-WW_SCL_result.xlsx",
-#   "C:/Users/liyux/Desktop/result/DGP2-test/DGP2-WW_SCH_result.xlsx",
-#   "C:/Users/liyux/Desktop/result/DGP2-test/DGP2-Bagging_time_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/DGP2-test/DGP2-Adaboosting_time_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/DGP2-test/DGP2-WW_UNIF_result.xlsx",
-#   "C:/Users/liyux/Desktop/result/DGP2-test/DGP2-GBM_result.xlsx",
-#   "C:/Users/liyux/Desktop/result/DGP2-test/DGP2-RF_result.xlsx"
+#   "C:/Users//Desktop/result/DGP2-test/DGP2-smo_rem_time_result2.xlsx",
+#   "C:/Users//Desktop/result/DGP2-test/DGP2-smo_rem+ma+XGBoost_time_result2.xlsx",
+#   "C:/Users//Desktop/result/DGP2-test/DGP2-WW_SVMICL_NHL_result2.xlsx",
+#   "C:/Users//Desktop/result/DGP2-test/DGP2-WW_SVMICH_NHL_result2.xlsx",
+#   "C:/Users//Desktop/result/DGP2-test/DGP2-WW_SCL_result.xlsx",
+#   "C:/Users//Desktop/result/DGP2-test/DGP2-WW_SCH_result.xlsx",
+#   "C:/Users//Desktop/result/DGP2-test/DGP2-Bagging_time_result2.xlsx",
+#   "C:/Users//Desktop/result/DGP2-test/DGP2-Adaboosting_time_result2.xlsx",
+#   "C:/Users//Desktop/result/DGP2-test/DGP2-WW_UNIF_result.xlsx",
+#   "C:/Users//Desktop/result/DGP2-test/DGP2-GBM_result.xlsx",
+#   "C:/Users/sktop/result/DGP2-test/DGP2-RF_result.xlsx"
 # )
 # 
 # file_paths <- c(
-# "C:/Users/liyux/Desktop/result/DGP3/DGP3-smo_rem_time_result2.xlsx",
-# "C:/Users/liyux/Desktop/result/DGP3/DGP3-smo_rem+ma+XGBoost_time_result2.xlsx",
-# "C:/Users/liyux/Desktop/result/DGP3/DGP3-WW_SVMICL_NHL_result2.xlsx",
-# "C:/Users/liyux/Desktop/result/DGP3/DGP3-WW_SVMICH_NHL_result2.xlsx",
-# "C:/Users/liyux/Desktop/result/DGP3/DGP3-WW_SCL_result.xlsx",
-# "C:/Users/liyux/Desktop/result/DGP3/DGP3-WW_SCH_result.xlsx",
-# "C:/Users/liyux/Desktop/result/DGP3/DGP3-Bagging_time_result2.xlsx",
-# "C:/Users/liyux/Desktop/result/DGP3/DGP3-Adaboosting_time_result2.xlsx",
-# "C:/Users/liyux/Desktop/result/DGP3/DGP3-WW_UNIF_result.xlsx",
-# "C:/Users/liyux/Desktop/result/DGP3/DGP3-GBM_result.xlsx",
-# "C:/Users/liyux/Desktop/result/DGP3/DGP3-RF_result.xlsx"
+# "C:/Users/result/DGP3/DGP3-smo_rem_time_result2.xlsx",
+# "C:/Users//Desktop/result/DGP3/DGP3-smo_rem+ma+XGBoost_time_result2.xlsx",
+# "C:/Users//Desktop/result/DGP3/DGP3-WW_SVMICL_NHL_result2.xlsx",
+# "C:/Users/Desktop/result/DGP3/DGP3-WW_SVMICH_NHL_result2.xlsx",
+# "C:/Users/Desktop/result/DGP3/DGP3-WW_SCL_result.xlsx",
+# "C:/Users//Desktop/result/DGP3/DGP3-WW_SCH_result.xlsx",
+# "C:/Users//Desktop/result/DGP3/DGP3-Bagging_time_result2.xlsx",
+# "C:/Users//Desktop/result/DGP3/DGP3-Adaboosting_time_result2.xlsx",
+# "C:/Users//Desktop/result/DGP3/DGP3-WW_UNIF_result.xlsx",
+# "C:/Users//Desktop/result/DGP3/DGP3-GBM_result.xlsx",
+# "C:/Users/ktop/result/DGP3/DGP3-RF_result.xlsx"
 # )
 
 # file_paths <- c(
-#   "C:/Users/liyux/Desktop/result/r-smo_rem_time_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/r-smo_rem+ma+XGBoost_time_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/r-WW_SVMICL_NHL_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/r-WW_SVMICH_NHL_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/r-WW_SCL_result.xlsx",
-#   "C:/Users/liyux/Desktop/result/r-WW_SCH_result.xlsx",
-#   "C:/Users/liyux/Desktop/result/r-Bagging_time_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/r-Adaboosting_time_result2.xlsx",
-#   "C:/Users/liyux/Desktop/result/r-WW_UNIF_result.xlsx",
-#   "C:/Users/liyux/Desktop/result/r-GBM_result.xlsx",
-#   "C:/Users/liyux/Desktop/result/r-RF_result.xlsx"
+#   "C:/Users//Desktop/result/r-smo_rem_time_result2.xlsx",
+#   "C:/Users//Desktop/result/r-smo_rem+ma+XGBoost_time_result2.xlsx",
+#   "C:/Users//Desktop/result/r-WW_SVMICL_NHL_result2.xlsx",
+#   "C:/Users//Desktop/result/r-WW_SVMICH_NHL_result2.xlsx",
+#   "C:/Users//Desktop/result/r-WW_SCL_result.xlsx",
+#   "C:/Users//Desktop/result/r-WW_SCH_result.xlsx",
+#   "C:/Users//Desktop/result/r-Bagging_time_result2.xlsx",
+#   "C:/Users//Desktop/result/r-Adaboosting_time_result2.xlsx",
+#   "C:/Users//Desktop/result/r-WW_UNIF_result.xlsx",
+#   "C:/Users//Desktop/result/r-GBM_result.xlsx",
+#   "C:/Users//Desktop/result/r-RF_result.xlsx"
 # )
 
 method_names <- c("REMSVM", "REMSVMMA", "SVMICL", "SVMICH","SCL", "SCH",
@@ -185,11 +185,7 @@ error_table_data %>%
   ) %>%
   kableExtra::column_spec(1,bold=TRUE)
 
-# ===============================
-# 导出 Excel
-# ===============================
-
-output_path <- "C:/Users/liyux/Desktop/result/Error_Rate_Table.xlsx"
+output_path <- "C:/Users//Desktop/result/Error_Rate_Table.xlsx"
 
 wb <- openxlsx::createWorkbook()
 
