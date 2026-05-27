@@ -1,6 +1,4 @@
-library(e1071)
-library(MASS)  # 用于生成多元正态分布数据
-
+# 
 # 参数设置
 K <- 8  # 类别数
 d <- 6  # 数据维度
@@ -59,61 +57,6 @@ test_data <- generate_data(imbalance_ratio_test, means, cov_matrix)
 X_test <- test_data$data
 y_test <- test_data$labels
 
-# 输出不平衡数据的类别分布
-print(table(y_train))
-print(table(y_test))
-
-
-
-
-
-
-
-
-K <- 8  # 类别数
-d <- 7  # 数据维度
-n_train <- 20  # 训练集每个类别样本数
-n_test <- 100    # 测试集每个类别样本数
-distance_factor= 35
-
-
-# 调整均值向量的生成方式，增加均值向量之间的距离
-simplex <- function(K, d, distance_factor ) {
-  # 生成 K 个点，每个点是 d 维向量，满足点的和为 1
-  mat <- matrix(runif(K * d), nrow = K)
-  mat <- apply(mat, 1, function(x) x / sum(x))  # 归一化
-  
-  # 调整均值向量之间的距离
-  # 增加一个因子来增加类别之间的间距
-  mat <- mat * distance_factor
-  return(t(mat))
-}
-# 使用调整过的均值向量生成数据
-means <- simplex(K, d, distance_factor ) 
-# 假设协方差矩阵是单位矩阵（较小的协方差可能导致较低误差）
-cov_matrix <- diag(d)
-
-# 生成数据
-generate_data <- function(n, means, cov_matrix) {
-  data <- NULL
-  labels <- NULL
-  for (i in 1:K) {
-    x <- mvrnorm(n, means[i, ], cov_matrix)  # 从正态分布生成数据
-    y <- rep(i, n)  # 类别标签
-    data <- rbind(data, x)
-    labels <- c(labels, y)
-  }
-  return(list(data = data, labels = labels))
-}
-
-# 生成训练集
-train_data <- generate_data(n_train, means, cov_matrix)
-X_train <- train_data$data
-y_train <- train_data$labels
-
-test_data <- generate_data(n_test, means, cov_matrix)
-X_test <- test_data$data
-y_test <- test_data$labels
 # 输出不平衡数据的类别分布
 print(table(y_train))
 print(table(y_test))
