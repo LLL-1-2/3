@@ -1,0 +1,107 @@
+
+# =====================================================
+# 读取长三角空气质量数据并构建分类数据集
+# =====================================================
+
+folder <- "C:/Users/....../长三角市级空气质量日报数据集(2022年)-数据实体"
+
+file_names <- c("AQI", "CO", "NO2", "O3_8h", "PM2.5", "PM10", "SO2")
+files <- file.path(folder, paste0(file_names, ".xlsx"))
+
+missing <- !file.exists(files)
+if (any(missing)) {
+  stop("以下文件不存在，请检查文件名或路径：", 
+       paste(files[missing], collapse = ", "))
+}
+
+# ------------------------------
+# 2. 自定义函数：将宽格式的 Excel 转换为长格式
+# ------------------------------
+read_and_pivot <- function(file, value_name) {
+  df <- read_excel(file, col_names = TRUE)
+  # 第一列为城市名，统一命名
+  colnames(df)[1] <- "city"
+  # 宽转长，列名中的"2022/1/1"格式日期直接作为 date 变量
+  df_long <- df %>%
+    pivot_longer(
+      cols = -city,
+      names_to = "date",
+      values_to = value_name
+    ) %>%
+    mutate(date = as.character(date))   # 保持日期字符串一致
+  return(df_long)
+}
+
+# ------------------------------
+# 3. 读取并转换 AQI，生成类别标签
+# ------------------------------
+aqi_long <- read_and_pivot(files[1], "AQI")
+
+# 按标准划分为 1~6 级
+aqi_long <- aqi_long %>%
+  mutate(
+    label = cut(AQI,
+                breaks = c(-Inf, 50, 100, 150, 200, 300, Inf),
+                labels = 1:6,
+                right = TRUE)
+  ) %>%
+  mutate(label = as.integer(as.character(label)))  # 转为整数
+
+# ------------------------------
+# 4. 读取其他六个指标，并转换为长格式
+# ------------------------------
+co_long  <- read_and_pivot(files[2], "CO")
+no2_long <- read_and_pivot(files[3], "NO2")
+o3_long  <- read_and_pivot(files[4], "O3_8h")
+pm25_long <- read_and_pivot(files[5], "PM2.5")
+pm10_long <- read_and_pivot(files[6], "PM10")
+so2_long <- read_and_pivot(files[7], "SO2")
+
+# ------------------------------
+# 5. 合并所有数据（按城市和日期左连接）
+# ------------------------------
+data <- aqi_long %>%
+  dplyr::select(city, date, label) %>%
+  left_join(co_long, by = c("city", "date")) %>%
+  left_join(no2_long, by = c("city", "date")) %>%
+  left_join(o3_long, by = c("city", "date")) %>%
+  left_join(pm25_long, by = c("city", "date")) %>%
+  left_join(pm10_long, by = c("city", "date")) %>%
+  left_join(so2_long, by = c("city", "date"))
+
+# 删除含有缺失值的样本（如果某城市某天任意指标缺失）
+data <- drop_na(data)
+
+# ------------------------------
+# 6. 组装最终数据框，适配您的模型代码
+# ------------------------------
+# 提取特征列（这里为 CO, NO2, O3_8h, PM2.5, PM10, SO2）
+feature_names <- c("CO", "NO2", "O3_8h", "PM2.5", "PM10", "SO2")
+
+# 构建 placeholder + label + 特征的数据框
+data <- data.frame(
+  placeholder = rep(1, nrow(data)),
+  label = data$label,
+  data[, feature_names],
+  check.names = FALSE
+)
+
+# 提取特征矩阵并强制数值化
+X <- data[, 3:ncol(data)]
+X[] <- lapply(X, function(x) as.numeric(as.character(x)))
+X <- as.matrix(X)
+
+# 标签向量
+y <- as.integer(data[[2]])
+
+# 标准化特征
+X_scaled <- scale(X)
+
+# ------------------------------
+# 7. 输出基本信息
+# ------------------------------
+cat("合并后样本总数:", nrow(data), "\n")
+cat("特征数:", ncol(X), "\n")
+cat("标签分布:\n")
+print(table(y))
+
