@@ -1,0 +1,1118 @@
+'''
+另一种运用模型的方法：
+MA的原始Python代码在``Model Averaging for Support Vector Machine by Cross-Validation"有开源，
+可在R中调用python包使用。
+install.packages("reticulate") # 安装
+library(reticulate) # 加载
+'''
+from sklearn import svm
+import numpy as np
+
+
+def addone(X):
+    return np.hstack((np.ones((len(X),1)),X))
+
+
+class Bagging():
+    def __init__(self,X_train,Y_train,Models,Indexs):
+        self.w=None
+        self.X_train=X_train
+        self.Y_train = Y_train
+        self.Indexs=Indexs
+        self.Models=Models
+
+
+    def get_weights(self,type='unif'):
+        if type=='unif':
+            self.w=np.ones(len(self.Models))/len(self.Models)
+        elif type=='optimal':
+            A = np.zeros((len(self.Y_train), 1))
+            for clf, index in zip(self.Models, self.Indexs):
+                X_train_s = self.X_train[:, index]
+                A = np.hstack((A, clf.predict(X_train_s).reshape(-1, 1)))
+            A = A[:, 1:]
+            A = np.mat(A)
+            self.w=np.array(np.linalg.pinv(A.T*A)*A.T*self.Y_train.reshape((-1,1)))
+
+
+    def predict(self,X_Pre):
+        Pre=np.zeros(X_Pre.shape[0])
+        for clf,w,index in zip(self.Models,self.w,self.Indexs):
+            X_Pre_s = X_Pre[:, index]
+            Pre+=w*clf.predict(X_Pre_s)
+        self.Pre=np.sign(Pre)
+        return self.Pre
+
+class Adaboosting():
+    def __init__(self,X_train,Y_train,Indexs,C=1):
+        self.w=None
+        self.X_train=X_train
+        self.Y_train = Y_train
+        self.Indexs=Indexs
+        self.Models=[]
+        self.C=C
+
+    def fit(self):
+        self.w=[]
+        Dt=np.ones(self.X_train.shape[0])/self.X_train.shape[0]
+        for index in self.Indexs:
+            clf = svm.LinearSVC(penalty='l2', loss='hinge', C=self.C)
+            X_train_s = self.X_train[:, index]
+
+            ind=np.random.choice(range(X_train_s.shape[0]), size=X_train_s.shape[0], replace=True, p=Dt)
+
+            X_train_s_t=X_train_s[ind,:]
+            clf.fit(X_train_s_t, self.Y_train)
+            beta = np.hstack((clf.intercept_, clf.coef_[0]))
+            Y_res_t = np.sign(np.dot(addone(X_train_s), beta))
+            epsilon=1-(Y_res_t==self.Y_train).mean()
+            if epsilon>0.5:
+                break
+            self.Models.append(clf)
+            alpha=0.5*np.log(1/epsilon-1)
+            self.w.append(alpha)
+            Dt=Dt*np.exp(-alpha*Y_res_t*self.Y_train)
+            Dt=Dt/sum(Dt)
+
+        self.w=np.array(self.w)
+
+    def predict(self,X_Pre):
+        Pre=np.zeros(X_Pre.shape[0])
+        for clf,w,index in zip(self.Models,self.w,self.Indexs):
+            X_Pre_s = X_Pre[:, index]
+            Pre+=w*clf.predict(X_Pre_s)
+        self.Pre=np.sign(Pre)
+        return self.Pre
+
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+class SVMMAfigure():
+    def __init__(self, modelsettings, modeltype,ismisspecification):
+        self.modelsettings = modelsettings
+        self.modeltype = modeltype
+        self.ismisspecification=ismisspecification
+        self.linewidth = 0.7
+        self.markersize = '4'
+        self.summary_dir = os.path.abspath('..\\figures\\ismisspecification={1}\\modeltype={0}\\summary\\'.format(modeltype, ismisspecification))
+        self.folder_figure = os.path.abspath('..\\figures\\ismisspecification={1}\\modeltype={0}\\'.format(modeltype, ismisspecification))
+
+        methlist=['cl','ch','scl','sch','ma','unif']
+        methlist2 = ['cl', 'ch', 'scl', 'sch', 'ma', 'unif', 'Bagging', 'AdaBoosting']
+        self.ratio_varlist = ['ratio_' + nam for nam in methlist]
+        self.MSE_varlist = ['MSE_' + nam for nam in methlist2]
+        self.NMSE_varlist = ['NMSE_' + nam for nam in methlist]
+        self.TPR_varlist = ['TPR_' + nam for nam in methlist]
+        self.FPR_varlist = ['FPR_' + nam for nam in methlist]
+        self.x_labels = [r'$SVMICL$', r'$SVMICH$',r'SCL',r'SCH', r'$MA$',r'$UNIF$']
+        self.stype_list = ['--+', '-*', '-.o', ':v', '--^', '-.D', '--1', '-s']
+
+
+    def tidy_fun(self):
+        modeltype = self.modeltype
+        # collect the data
+        df = pd.DataFrame()
+        for n,p in self.modelsettings:
+            folder = os.path.abspath('..\\Results\\ismisspecification={3}\\modeltype={0}\\n={1}_p={2}\\replication\\'.format(modeltype, n, p,self.ismisspecification))
+            for file in os.listdir(folder):
+                tempfile = pd.read_csv(folder + '\\' + file)
+                df = pd.concat([df, tempfile])
+
+        folder2 = self.summary_dir
+        if not os.path.exists(folder2):
+            os.makedirs(folder2)
+        df.to_csv(folder2 + '/alldata.csv', index=False)
+        df = pd.read_csv(folder2 + '/alldata.csv')
+        self.alldata = df.copy()
+
+
+        df1 = df.melt(id_vars=['n','p', 'repeat'], var_name=['methods'])
+        df2 = pd.pivot_table(df1, index=['n','p','repeat'], columns=['methods'])
+        # average
+        df3 = df2.groupby(level=['n', 'p']).mean()
+        # change the names of columns
+        df3.columns = [i[1] for i in df3.columns]
+        df4 = df3.reset_index(level=['n', 'p'])
+        df4.to_csv(folder2 + '/meandata.csv', index=False)
+        self.meandata = df4.copy()
+
+    def figure_fun(self):
+        folder_figure = self.folder_figure
+        if not os.path.exists(folder_figure):
+            os.makedirs(folder_figure)
+        df = self.meandata.copy()
+        #the line chart of MSE, based on meandata.csv
+        stype_list = self.stype_list
+        # optimal property, based on meandata.csv
+        R2set = np.unique(df['p'])
+        self.R2set = R2set
+        ratio_list = self.ratio_varlist
+        for p in R2set:
+            plt.figure()
+            for var, stype in zip(ratio_list, stype_list):
+                df_temp = df[df['p'] == p]
+                plt.plot(df_temp['n'], df_temp[var], stype, label=var[6:].upper().replace('SCL','S1').replace('SCH','S2').replace('CL','SVMICL').replace('CH','SVMICH').replace('MA','SVMMA').replace('S1','SCL').replace('S2','SCH').replace('BAGGING','BAG').replace('ADABOOSTING','ADA'), lw=self.linewidth,
+                         markersize=self.markersize)
+            plt.title('The curves of NHL')
+            # plt.title(f'p={p}' + ', ' + f'modeltype={self.modeltype}')
+            plt.xlabel('training size')
+            plt.legend(loc=2, prop={'size': 7},ncol=2)
+            fig = plt.gcf()
+            fig.set_size_inches(3.75, 3)
+            plt.savefig(folder_figure + f'/optimality_p={p}.png', dpi=250,bbox_inches='tight', pad_inches=0.1)
+
+
+        #the boxplot of MSE
+        df = self.alldata.copy()
+        # for p in R2set:
+        #     plt.figure()
+        #     df_temp = df[df['p'] == p]
+        #     df_temp = df_temp.dropna(axis=0)
+        #     plt.boxplot(df_temp[self.MSE_varlist].T)
+        #     plt.xticks(range(1, len(self.MSE_varlist) + 1), self.x_labels)
+        #     plt.axhline(np.median(df_temp['MSE_ma'], ), color="red", linestyle='--')
+        #     plt.title('The boxplot of error rate')
+        #     plt.savefig(folder_figure + f'/The_boxplot_of_MSE_p={p}.png', dpi=250,bbox_inches='tight', pad_inches=0.1)
+
+
+        # the line chart of NMS，x axis represents the training size
+        varname_list = ['n', 'p', 'repeat']
+        varname_list.extend(self.MSE_varlist)
+        for p in R2set:
+            df_temp = df.loc[df['p'] == p, varname_list]
+            df1 = df_temp.melt(id_vars=['n', 'repeat'], var_name=['methods'])
+            # generate mutiIndex table
+            df2 = pd.pivot_table(df1, index=['n', 'repeat'], columns=['methods'])
+            df3 = df2.groupby(level=['n']).mean()
+            df3.columns = [i[1] for i in df3.columns]
+            df3 = df3[self.MSE_varlist]
+
+            plt.figure()
+            for var, stype in zip(self.MSE_varlist, stype_list):
+                plt.plot(df3[var], stype, label=var[4:].upper().replace('SCL','S1').replace('SCH','S2').replace('CL','SVMICL').replace('CH','SVMICH').replace('MA','SVMMA').replace('S1','SCL').replace('S2','SCH').replace('BAGGING','BAG').replace('ADABOOSTING','ADA'), lw=self.linewidth, markersize=self.markersize)
+            plt.title('The curves of ER')
+            # plt.title(f'p={p}' + ', ' + f'modeltype={self.modeltype}')
+            plt.xlabel('train size')
+            plt.legend(loc=2, prop={'size': 7},ncol=2)
+            # plt.ylim((0,0.7))
+            fig = plt.gcf()
+            fig.set_size_inches(3.75, 3)
+            plt.savefig(folder_figure + f'/The_mean_of_NMSE_realdata_p={p}.png', dpi=250,bbox_inches='tight', pad_inches=0.1)
+
+
+    def figure_fun2(self):
+        # modelsettings = self.modelsettings
+        folder_figure = self.folder_figure
+        if not os.path.exists(folder_figure):
+            os.makedirs(folder_figure)
+        df = self.meandata.copy()
+        #the line chart of MSE, based on meandata.csv
+        stype_list = self.stype_list
+
+
+
+        # optimal property, based on meandata.csv
+        R2set = np.unique(df['p'])
+        self.R2set = R2set
+        ratio_list = self.ratio_varlist
+        for p in R2set:
+            plt.figure()
+            for var, stype in zip(ratio_list, stype_list):
+                df_temp = df[df['p'] == p]
+                plt.plot(df_temp['n'], df_temp[var], stype, label=var[6:].upper().replace('SCL','S1').replace('SCH','S2').replace('CL','SVMICL').replace('CH','SVMICH').replace('MA','SVMMA').replace('S1','SCL').replace('S2','SCH').replace('BAGGING','BAG').replace('ADABOOSTING','ADA'), lw=self.linewidth,
+                         markersize=self.markersize)
+            plt.title('The curves of NHL')
+            plt.xlabel('training size')
+            plt.legend(loc=2, prop={'size': 7},ncol=2)
+            fig = plt.gcf()
+            fig.set_size_inches(3.75, 3)
+            plt.savefig(folder_figure + f'/optimality_p={p}.png', dpi=250,
+                        bbox_inches='tight', pad_inches=0.1)
+
+
+        #the boxplot of MSE
+        # df = self.alldata.copy()
+        # for n,p in self.modelsettings:
+        #     plt.figure()
+        #     df_temp = df[df['p'] == p][df['n']==n]
+        #     df_temp = df_temp.dropna(axis=0)
+        #     plt.boxplot(df_temp[self.MSE_varlist].T)
+        #     plt.xticks(range(1, len(self.MSE_varlist) + 1), self.x_labels)
+        #     plt.axhline(np.median(df_temp['MSE_ma'], ), color="red", linestyle='--')
+        #     plt.title('The boxplot of error rate')
+        #     plt.savefig(folder_figure + f'/The_boxplot_of_MSE_p={p}_n={n}.png', dpi=250,
+        #                 bbox_inches='tight', pad_inches=0.1)
+
+
+
+        #the boxplot of TPR
+        # df = self.alldata.copy()
+        # for n,p in self.modelsettings:
+        #     plt.figure()
+        #     df_temp = df[df['p'] == p][df['n']==n]
+        #     df_temp = df_temp.dropna(axis=0)
+        #     plt.boxplot(df_temp[self.TPR_varlist].T)
+        #     plt.xticks(range(1, len(self.TPR_varlist) + 1), self.x_labels)
+        #     plt.axhline(np.median(df_temp['TPR_ma'], ), color="red", linestyle='--')
+        #     plt.title('The boxplot of TPR')
+        #     plt.savefig(folder_figure + f'/The_boxplot_of_TPR_p={p}_n={n}.png', dpi=250,
+        #                 bbox_inches='tight', pad_inches=0.1)
+
+
+        #the boxplot of FPR
+        # df = self.alldata.copy()
+        # for n,p in self.modelsettings:
+        #     plt.figure()
+        #     df_temp = df[df['p'] == p][df['n']==n]
+        #     df_temp = df_temp.dropna(axis=0)
+        #     plt.boxplot(df_temp[self.FPR_varlist].T)
+        #     plt.xticks(range(1, len(self.FPR_varlist) + 1), self.x_labels)
+        #     plt.axhline(np.median(df_temp['FPR_ma'], ), color="red", linestyle='--')
+        #     plt.title('The boxplot of FPR')
+        #     plt.savefig(folder_figure + f'/The_boxplot_of_FPR_p={p}_n={n}.png', dpi=250,
+        #                 bbox_inches='tight', pad_inches=0.1)
+
+
+
+
+
+
+
+        # the line chart of NMS，x axis represents the training size
+        varname_list = ['n', 'p', 'repeat']
+        varname_list.extend(self.MSE_varlist)
+        df = self.alldata.copy()
+        for p in R2set:
+            df_temp = df.loc[df['p'] == p, varname_list]
+            df1 = df_temp.melt(id_vars=['n', 'repeat'], var_name=['methods'])
+            # generate mutiIndex table
+            df2 = pd.pivot_table(df1, index=['n', 'repeat'], columns=['methods'])
+            df3 = df2.groupby(level=['n']).mean()
+            df3.columns = [i[1] for i in df3.columns]
+            df3 = df3[self.MSE_varlist]
+
+            plt.figure()
+            for var, stype in zip(self.MSE_varlist, stype_list):
+                plt.plot(df3[var], stype, label=var[4:].upper().replace('SCL','S1').replace('SCH','S2').replace('CL','SVMICL').replace('CH','SVMICH').replace('MA','SVMMA').replace('S1','SCL').replace('S2','SCH').replace('BAGGING','BAG').replace('ADABOOSTING','ADA'), lw=self.linewidth, markersize=self.markersize)
+
+            plt.title('The curves of ER')
+            plt.xlabel('train size')
+            plt.legend(loc=2, prop={'size': 7},ncol=2)
+            fig = plt.gcf()
+            fig.set_size_inches(3.75, 3)
+            plt.savefig(folder_figure + f'/The_mean_of_NMSE_p={p}.png',
+                        dpi=250,bbox_inches='tight', pad_inches=0.1)
+
+        varname_list = ['n', 'p', 'repeat']
+        varname_list.extend(self.TPR_varlist)
+        for p in R2set:
+            df_temp = df.loc[df['p'] == p, varname_list]
+            df1 = df_temp.melt(id_vars=['n', 'repeat'], var_name=['methods'])
+            # generate mutiIndex table
+            df2 = pd.pivot_table(df1, index=['n', 'repeat'], columns=['methods'])
+            df3 = df2.groupby(level=['n']).mean()
+            df3.columns = [i[1] for i in df3.columns]
+            df3 = df3[self.TPR_varlist]
+
+            plt.figure()
+            for var, stype in zip(self.TPR_varlist, stype_list):
+                plt.plot(df3[var], stype, label=var[4:].upper().replace('SCL','S1').replace('SCH','S2').replace('CL','SVMICL').replace('CH','SVMICH').replace('MA','SVMMA').replace('S1','SCL').replace('S2','SCH').replace('BAGGING','BAG').replace('ADABOOSTING','ADA'), lw=self.linewidth, markersize=self.markersize)
+            plt.title('Mean of TPR')
+            plt.xlabel('train size')
+            plt.legend(loc=2, prop={'size': 7},ncol=2)
+            fig = plt.gcf()
+            fig.set_size_inches(3.75, 3)
+            plt.savefig(folder_figure + f'/The_mean_of_TPR_p={p}.png',
+                        dpi=250,bbox_inches='tight', pad_inches=0.1)
+
+            varname_list = ['n', 'p', 'repeat']
+            varname_list.extend(self.FPR_varlist)
+            for p in R2set:
+                df_temp = df.loc[df['p'] == p, varname_list]
+                df1 = df_temp.melt(id_vars=['n', 'repeat'], var_name=['methods'])
+                # generate mutiIndex table
+                df2 = pd.pivot_table(df1, index=['n', 'repeat'], columns=['methods'])
+                df3 = df2.groupby(level=['n']).mean()
+                df3.columns = [i[1] for i in df3.columns]
+                df3 = df3[self.FPR_varlist]
+
+                plt.figure()
+                for var, stype in zip(self.FPR_varlist, stype_list):
+                    plt.plot(df3[var], stype, label=var[4:].upper().replace('SCL','S1').replace('SCH','S2').replace('CL','SVMICL').replace('CH','SVMICH').replace('MA','SVMMA').replace('S1','SCL').replace('S2','SCH').replace('BAGGING','BAG').replace('ADABOOSTING','ADA'), lw=self.linewidth, markersize=self.markersize)
+                plt.title('Mean of FPR')
+                plt.xlabel('train size')
+                plt.legend(loc=2, prop={'size': 7},ncol=2)
+                fig = plt.gcf()
+                fig.set_size_inches(3.75, 3)
+                plt.savefig(folder_figure + f'/The_mean_of_FPR_p={p}.png',
+                            dpi=250, bbox_inches='tight', pad_inches=0.1)
+
+
+
+
+
+    def correct_w_figure(self):
+        # the line chart of correct_weight
+        df = self.meandata.copy()
+        plt.figure()
+        R2set = [0.5, 0.7]
+        nset=np.array([100,300,500])
+        fun=lambda x:x in nset
+        inds= [fun(x) for x in df['n']]
+        df=df.iloc[inds,:]
+        types=self.stype_list[0:3]
+        for R_2,type in zip(R2set,types):
+            df_temp = df[df['R_2'] == R_2]
+            plt.plot(df_temp['samplesize'], df_temp["sum_corweights"], type, label=r'$R^2$={}'.format(R_2), lw=self.linewidth,
+                     markersize=self.markersize)
+        # plt.title(r"The sum of correct model's weights when $R^2$={}".format(R_2))
+        plt.title(r'$\sin(\cdot)$'+', '+self.modeltype)
+        plt.xlabel('training size')
+        plt.legend(loc=2, prop={'size': 7},ncol=2)
+        fig = plt.gcf()
+        fig.set_size_inches(3.75, 3)
+        plt.savefig(self.folder_figure + '/sumweights_R2={}.png'.format(str(R_2).replace('.', 'd')),
+                    bbox_inches='tight', pad_inches=0.1, dpi=250)
+
+
+    def thm3_figure(self):
+        df = self.meandata.copy()
+        R2set = [0.5, 0.7]
+        nset = np.array([100, 300, 500])
+        fun = lambda x: x in nset
+        inds = [fun(x) for x in df['samplesize']]
+        df=df.iloc[inds,:]
+        types = self.stype_list[0:3]
+        plt.figure()
+        for R_2, type in zip(R2set, types):
+            df_temp = df[df['R_2'] == R_2]
+            plt.plot(df_temp['samplesize'], df_temp["thm3_value"], type, lw=self.linewidth,
+                     label=r'$R^2$={}'.format(R_2),
+                     markersize=self.markersize)
+        plt.title(r'$\sin(\cdot)$' + ', ' + self.modeltype1)
+        plt.xlabel('training size')
+        plt.legend(loc=1, prop={'size': 7},ncol=2)
+        fig = plt.gcf()
+        fig.set_size_inches(3.75, 3)
+        plt.savefig(self.folder_figure + '/thm3_R2={}.png'.format(str(R_2).replace('.', 'd')),
+                    bbox_inches='tight', pad_inches=0.1, dpi=250)
+import numpy as np
+from sklearn import svm
+import scipy.optimize
+
+
+def addone(X):
+    return np.hstack((np.ones((len(X),1)),X))
+
+
+def MA_Evaluation(weight, X_pre, Y_pre, Models, Indexs):
+    # evaluation function for model averaging
+    beta_weight = 0
+    # SBIC
+    for clf, w, index in zip(Models, weight, Indexs):
+        beta = np.zeros(Indexs.shape[1])
+        beta[index] = clf.coef_[0]
+        beta=np.hstack((clf.intercept_,beta))
+        beta_weight = beta * w + beta_weight
+
+    Y_res = np.sign(np.dot(addone(X_pre), beta_weight))
+    hingeloss=sum(map(lambda x: max(x,0), 1-Y_pre*np.dot(addone(X_pre),beta_weight)))/len(Y_pre)
+
+    P=sum(Y_pre==1)
+    N=sum(Y_pre==-1)
+    TP=sum([x==1 and y==1 for x,y in zip(Y_pre,Y_res)])
+    TPR=TP/P
+    FP=sum([x==-1 and y==1 for x,y in zip(Y_pre,Y_res)])
+    FPR=FP/N
+    MSE = np.array((Y_res != Y_pre)).mean()
+    return TPR,FPR,MSE,hingeloss
+
+
+class SVMMA2():
+    def __init__(self,X_train,Y_train,Indexs,samplesize,Beta,Jn,C):
+        self.Beta=Beta
+        self.samplesize=samplesize
+        self.Jn=Jn
+        self.Indexs=Indexs
+        self.X_train=X_train
+        self.Y_train=Y_train
+        self.C=C
+
+
+    def calculate_weights(self):
+        def pre_optima():
+            Mn = self.samplesize // self.Jn
+            Betas = []
+            block = []
+            for j in range(self.Jn):
+                block.append([])
+                if j == self.Jn - 1:
+                    block[j] = [not j * Mn <= i < self.samplesize for i in range(self.samplesize)]
+                else:
+                    block[j] = [not j * Mn <= i < (j + 1) * Mn for i in range(self.samplesize)]
+                X_train_j = self.X_train[block[j], :]
+                Y_train_j = self.Y_train[block[j]]
+                clf=svm.LinearSVC(penalty='l2', loss='hinge', C=self.C,random_state=0,max_iter=10000)
+                Betas.append(np.zeros((self.X_train.shape[1]+1, 1)))
+                for index in self.Indexs:
+                    X_train_s = X_train_j[:, index]
+                    clf.fit(X_train_s, Y_train_j)
+                    beta = np.zeros(self.X_train.shape[1])
+                    beta[index] = clf.coef_[0]
+                    beta=np.hstack((clf.intercept_,beta))
+                    Betas[j] = np.hstack((Betas[j], beta.reshape(len(beta), 1)))  # 一列是一个beta
+                Betas[j] = Betas[j][:, 1:]
+            return Betas, block
+
+        def w_object(w, Betas, block):
+            Hingelossj = []
+            for j in range(self.Jn):
+                beta_j = np.dot(Betas[j], w)
+                notblockj = [not _ for _ in block[j]]
+                X_train_j = self.X_train[notblockj, :]
+                Y_train_j = self.Y_train[notblockj]
+                Hingelossj.append(sum(map(lambda x: max(x, 0), 1 - Y_train_j * np.dot(addone(X_train_j), beta_j))))
+            return sum(Hingelossj) / (self.Jn * self.samplesize)
+
+        bnds = []
+        for i in range(self.Indexs.shape[0]):
+            bnds.append((0, 1))
+        bnds = tuple(bnds)
+        p0 = np.zeros(self.Indexs.shape[0])
+        Betas, block=pre_optima()
+        res = scipy.optimize.minimize(w_object, p0,args=(Betas,block), method='SLSQP',  bounds=bnds,options={'maxiter':200,'disp':False})#,tol=1e-6, constraints=({'type': 'eq', 'fun': lambda w: sum(w) - 1}))
+        return res.x
+
+
+        
+
+    def do_evaluation(self,X_pre,Y_pre):
+        w_hat=self.calculate_weights()
+        beta_hat=np.dot(self.Beta,w_hat)
+        Y_res = np.sign(np.dot(X_pre, beta_hat))
+        results['testerror'] = np.array((Y_res != Y_pre)).mean()
+
+    def get_minloss(self,X_pre,Y_pre):
+        def w_object3(w_hat,Beta2):
+            beta=np.dot(Beta2,w_hat)
+            return sum(map(lambda x: max(x,0),1-Y_pre*np.dot(addone(X_pre),beta)))/len(Y_pre)
+
+        Beta2=np.zeros(self.Indexs.shape[1]+1).reshape(self.Indexs.shape[1]+1,1)
+        for index,b in zip(self.Indexs,self.Beta):
+            beta = np.zeros(self.Indexs.shape[1])
+            beta[index] = b
+            Beta2=np.hstack((Beta2,beta.reshape(len(beta),1)))
+        Beta2=Beta2[:,1:]
+
+        bnds = []
+        for i in range(self.Indexs.shape[0]):
+            bnds.append((0, 1))
+        bnds = tuple(bnds)
+        p0 = np.zeros(self.Indexs.shape[0])
+        res = scipy.optimize.minimize(w_object3, p0,args=(Beta2), method='SLSQP', bounds=bnds,options={'maxiter': 200,'disp': False})  # ,tol=1e-6, constraints=({'type': 'eq', 'fun': lambda w: sum(w) - 1}))
+        return w_object3(res.x,Beta2)
+
+
+class SVMMA():
+    # 权重和等1的MA方法
+    def __init__(self, X_train, Y_train, Indexs, samplesize, Beta, Jn, C):
+        self.Beta = Beta
+        self.samplesize = samplesize
+        self.Jn = Jn
+        self.Indexs = Indexs
+        self.X_train = X_train
+        self.Y_train = Y_train
+        self.C = C
+        self.beta_ma_=None
+        self.w_hat_=None
+
+
+    def calculate_weights(self):
+        def pre_optima():
+            Mn = self.samplesize // self.Jn
+            Betas = []
+            block = []
+            for j in range(self.Jn):
+                block.append([])
+                if j == self.Jn - 1:
+                    block[j] = [not j * Mn <= i < self.samplesize for i in range(self.samplesize)]
+                else:
+                    block[j] = [not j * Mn <= i < (j + 1) * Mn for i in range(self.samplesize)]
+                X_train_j = self.X_train[block[j], :]
+                Y_train_j = self.Y_train[block[j]]
+                clf = svm.LinearSVC(penalty='l2', loss='hinge', C=self.C,random_state=0,max_iter=1000)
+                Betas.append(np.zeros((self.X_train.shape[1]+1, 1)))
+                for index in self.Indexs:
+                    X_train_s = X_train_j[:, index]
+                    clf.fit(X_train_s, Y_train_j)
+                    beta = np.zeros(self.X_train.shape[1])
+                    beta[index] = clf.coef_[0]
+                    beta=np.hstack((clf.intercept_,beta))
+                    Betas[j] = np.hstack((Betas[j], beta.reshape(len(beta), 1)))  # 一列是一个beta
+                Betas[j] = Betas[j][:, 1:]
+            return Betas, block
+
+        def w_object(w, Betas, block):
+            Hingelossj = []
+            for j in range(self.Jn):
+                beta_j = np.dot(Betas[j], w)
+                X_train_j = self.X_train[block[j], :]
+                Y_train_j = self.Y_train[block[j]]
+                Hingelossj.append(sum(map(lambda x: max(x, 0), 1 - Y_train_j * np.dot(addone(X_train_j), beta_j))))
+            return sum(Hingelossj) / (self.Jn * self.samplesize)
+
+        bnds = []
+        for i in range(self.Indexs.shape[0]):
+            bnds.append((0, 1))
+        bnds = tuple(bnds)
+        p0 = np.zeros(self.Indexs.shape[0])
+        Betas, block = pre_optima()
+        res = scipy.optimize.minimize(w_object, p0, args=(Betas, block), method='SLSQP', bounds=bnds,constraints={'type':'eq','fun':lambda x:sum(x)-1},
+                                      options={'maxiter': 200,'disp': False})
+        return res.x
+
+    def do_evaluation(self, X_pre, Y_pre):
+        w_hat = self.calculate_weights()
+        self.w_hat_=w_hat
+        beta_hat = np.dot(self.Beta, w_hat)
+        self.beta_ma_=beta_hat
+        Y_res = np.sign(np.dot(addone(X_pre), beta_hat))
+        results['testerror'] = np.array((Y_res != Y_pre)).mean()
+
+    def ROC_Curve(self,X_pre,Y_pre):
+        Y_res=np.ones(X_pre.shape[0])
+        for t in np.linspace(0,1,21):
+            Y_res[np.dot(X_pre,self.beta_ma_)<t]=-1
+            TPR.append()
+            FPR.append()
+        return TPR,FPR
+
+
+
+    def get_minloss(self, X_pre, Y_pre):
+        def w_object3(w_hat, Beta2):
+            beta = np.dot(Beta2, w_hat)
+            return sum(map(lambda x: max(x, 0), 1 - Y_pre * np.dot(addone(X_pre), beta))) / len(Y_pre)
+
+        Beta2 = np.zeros(self.Indexs.shape[1]+1).reshape(self.Indexs.shape[1]+1, 1)
+        for index, b in zip(self.Indexs, self.Beta):
+            beta = np.zeros(self.Indexs.shape[1])
+            beta[index] = b[1:]
+            beta=np.hstack((b[0],beta))
+            Beta2 = np.hstack((Beta2, beta.reshape(-1, 1)))
+        Beta2 = Beta2[:, 1:]
+
+        bnds = []
+        for i in range(self.Indexs.shape[0]):
+            bnds.append((0, 1))
+        bnds = tuple(bnds)
+        p0 = np.zeros(self.Indexs.shape[0])
+        res = scipy.optimize.minimize(w_object3, p0, args=(Beta2), method='SLSQP', bounds=bnds,constraints={'type':'eq','fun':lambda x:sum(x)-1}, options={'maxiter': 200, 'disp': False})
+        return w_object3(res.x, Beta2)
+import os
+import pandas as pd
+from multiprocessing import Process, Queue
+import ma_method
+import figure_file
+from tools_function import *
+import Enselearning
+
+
+def main(repeat, X_train, Y_train, X_pre, Y_pre, Mn, S_true, modeltype,ismisspecification):
+    # parameter prepration
+    samplesize = X_train.shape[0]
+    p = X_train.shape[1]
+    lambda_n = samplesize ** (-1)
+    C = (samplesize * lambda_n) ** (-1)
+
+    # candidate models setting up
+    Indexs = Indexs_fun_lasso(X_train, Y_train,k=100)
+    # estimate for candidate model
+    Models = []
+    Betas = []
+    HingesLoss = []
+    for index in Indexs:
+        clf=svm.LinearSVC(penalty='l2',loss='hinge', C=C)
+        X_train_s = X_train[:, index]
+        clf.fit(X_train_s, Y_train)
+        Models.append(clf)
+        beta = np.hstack((clf.intercept_,clf.coef_[0]))
+        Betas.append(beta)
+        tmp = map(lambda x: max(x, 0), 1 - Y_train * np.dot(addone(X_train_s), beta))  # hinge loss
+        HingesLoss.append(sum(tmp))
+
+    # model selection and weights
+    CL_method = select_method.SVMICL(HingesLoss, Indexs, Models, samplesize)
+    CH_method = select_method.SVMICH(HingesLoss, Indexs, Models, samplesize, Ln=np.sqrt(np.log(samplesize)))
+    w_CL = np.zeros(Indexs.shape[0])
+    w_CH = np.zeros(Indexs.shape[0])
+    w_full=np.zeros(Indexs.shape[0])
+    CL_bestmodel_ind = CL_method.get_bestmodel()
+    w_CL[CL_bestmodel_ind] = 1
+    CH_bestmodel_ind = CH_method.get_bestmodel()
+    w_CH[CH_bestmodel_ind] = 1
+    w_full[-1] = 1
+    w_unif=np.ones(Indexs.shape[0])/Indexs.shape[0]
+
+    MA_inds=range(len(Indexs))
+    MA_Indexs=Indexs[MA_inds,:]
+    MABetas=[Betas[i] for i in MA_inds]
+    MA_method = ma_method.SVMMA(X_train, Y_train, MA_Indexs, samplesize, MABetas, Jn=5, C=C)
+    MA_method2 = ma_method.SVMMA2(X_train, Y_train, MA_Indexs, samplesize, MABetas, Jn=5, C=C)
+    zeros = np.zeros(Indexs.shape[0])
+    w_ma_hat = MA_method.calculate_weights()
+    zeros[MA_inds]=w_ma_hat
+    w_ma_hat=zeros
+    w_ma_hat2 = MA_method2.calculate_weights()
+    zeros = np.zeros(Indexs.shape[0])
+    zeros[MA_inds]=w_ma_hat2
+    w_ma_hat2=zeros
+
+    w_SCL=SIC(np.array(CL_method.SVMICL_scores)/X_train.shape[0])
+    w_SCH=SIC(np.array(CH_method.SVMICH_scores)/X_train.shape[0])
+
+
+    print('the weights has been gotten.')
+
+    weight_df = pd.DataFrame({'w_CL': w_CL,
+                              'w_CH': w_CH,
+                              'w_ma': w_ma_hat,
+                              'w_ma2': w_ma_hat2,
+                              'w_SCL':w_SCL,
+                              'w_SCH':w_SCH,
+                              },)
+
+    # evaluation
+    TPR_full, FPR_full, MSE_full, hingeloss_full = ma_method.MA_Evaluation(w_full, X_pre, Y_pre, Models, Indexs)
+    TPR_cl, FPR_cl, MSE_cl, hingeloss_cl = ma_method.MA_Evaluation(w_CL, X_pre, Y_pre, Models, Indexs)
+    TPR_ch, FPR_ch, MSE_ch, hingeloss_ch = ma_method.MA_Evaluation(w_CH, X_pre, Y_pre, Models, Indexs)
+    TPR_ma, FPR_ma, MSE_ma, hingeloss_ma = ma_method.MA_Evaluation(w_ma_hat, X_pre, Y_pre, Models, Indexs)
+    TPR_ma2, FPR_ma2, MSE_ma2, hingeloss_ma2 = ma_method.MA_Evaluation(w_ma_hat2, X_pre, Y_pre, Models, Indexs)
+    TPR_unif, FPR_unif, MSE_unif, hingeloss_unif = ma_method.MA_Evaluation(w_unif, X_pre, Y_pre, Models, Indexs)
+    TPR_SCL, FPR_SCL, MSE_SCL, hingeloss_SCL = ma_method.MA_Evaluation(w_SCL, X_pre, Y_pre, Models, Indexs)
+    TPR_SCH, FPR_SCH, MSE_SCH, hingeloss_SCH = ma_method.MA_Evaluation(w_SCH, X_pre, Y_pre, Models, Indexs)
+
+    myBagging=Enselearning.Bagging(X_train,Y_train,Models,Indexs)
+    myBagging.get_weights(type='unif')
+    bagging_predict=myBagging.predict(X_pre)
+    MSE_Bagging = (bagging_predict != Y_pre).mean()
+    P = sum(Y_pre == 1)
+    N = sum(Y_pre == -1)
+    TP = sum([x == 1 and y == 1 for x, y in zip(Y_pre, bagging_predict)])
+    TPR_Bagging = TP / P
+    FP = sum([x == -1 and y == 1 for x, y in zip(Y_pre, bagging_predict)])
+    FPR_Bagging = FP / N
+
+    # implement adaboosting
+    myAdaboosting=Enselearning.Adaboosting(X_train,Y_train,Indexs[::-1,:],C=C)
+    myAdaboosting.fit()
+    boosting_predict=myAdaboosting.predict(X_pre)
+    MSE_AdaBoosting = (boosting_predict != Y_pre).mean()
+    TP = sum([x == 1 and y == 1 for x, y in zip(Y_pre, boosting_predict)])
+    TPR_AdaBoosting = TP / P
+    FP = sum([x == -1 and y == 1 for x, y in zip(Y_pre, boosting_predict)])
+    FPR_AdaBoosting = FP / N
+
+
+
+    if MSE_ma>0.5:
+        print(f'samplesize={samplesize},repea'
+              f't={repeat},MSE_ma={MSE_ma},出问题了！')
+    # ratio
+    minloss = MA_method.get_minloss(X_pre, Y_pre)
+    ratio_cl = hingeloss_cl / minloss
+    ratio_ch = hingeloss_ch / minloss
+    ratio_ma2 = hingeloss_ma2 / minloss
+    ratio_ma = hingeloss_ma / minloss
+    ratio_full = hingeloss_full / minloss
+    ratio_unif = hingeloss_unif / minloss
+    ratio_SCL = hingeloss_SCL / minloss
+    ratio_SCH = hingeloss_SCH / minloss
+    df = pd.DataFrame({'repeat': repeat,
+                       'n': X_train.shape[0],
+                       'p': X_train.shape[1],
+                       'ratio_cl': ratio_cl,
+                       'ratio_ch': ratio_ch,
+                       'ratio_scl': ratio_SCL,
+                       'ratio_sch': ratio_SCH,
+                        'ratio_ma2': ratio_ma2,
+                       'ratio_ma': ratio_ma,
+                       'ratio_full': ratio_full,
+                       'ratio_unif': ratio_unif,
+                       'TPR_cl': TPR_cl,
+                       'TPR_ch': TPR_ch,
+                       'TPR_ma2': TPR_ma2,
+                       'TPR_ma': TPR_ma,
+                       'TPR_full': TPR_full,
+                       'TPR_unif': TPR_unif,
+                       'TPR_scl': TPR_SCL,
+                       'TPR_sch': TPR_SCH,
+                       'TPR_Bagging': TPR_Bagging,
+                       'TPR_AdaBoosting': TPR_AdaBoosting,
+                       'minloss': minloss,
+                       'FPR_cl': FPR_cl,
+                       'FPR_ch': FPR_ch,
+                       'FPR_ma2': FPR_ma2,
+                       'FPR_ma': FPR_ma,
+                       'FPR_full': FPR_full,
+                       'FPR_unif': FPR_unif,
+                       'FPR_scl': FPR_SCL,
+                       'FPR_sch': FPR_SCH,
+                       'FPR_Bagging': FPR_Bagging,
+                       'FPR_AdaBoosting': FPR_AdaBoosting,
+                       'MSE_cl': MSE_cl,
+                       'MSE_ch': MSE_ch,
+                       'MSE_scl': MSE_SCL,
+                       'MSE_sch': MSE_SCH,
+                       'MSE_ma2': MSE_ma2,
+                       'MSE_ma': MSE_ma,
+                       'MSE_full': MSE_full,
+                       'MSE_unif': MSE_unif,
+                       'MSE_Bagging': MSE_Bagging,
+                       'MSE_AdaBoosting': MSE_AdaBoosting,
+                       'CL_select': CL_bestmodel_ind,
+                       'CH_select': CH_bestmodel_ind
+                        }, index=[0])
+
+    # tidy results
+    if not os.path.exists(f'..\\Results\\ismisspecification={ismisspecification}\\modeltype={modeltype}\\n={samplesize}_p={p}\\replication\\'):
+        os.makedirs(f'..\\Results\\ismisspecification={ismisspecification}\\modeltype={modeltype}\\n={samplesize}_p={p}\\replication\\')
+    df.to_csv(f'..\\Results\\ismisspecification={ismisspecification}\\modeltype={modeltype}\\n={samplesize}_p={p}\\replication\\repeat={repeat}.csv', index=False)
+    if not os.path.exists(f'..\\Results\\ismisspecification={ismisspecification}\\modeltype={modeltype}\\n={samplesize}_p={p}\\Indexs\\'):
+        os.makedirs(f'..\\Results\\ismisspecification={ismisspecification}\\modeltype={modeltype}\\n={samplesize}_p={p}\\Indexs\\')
+    pd.DataFrame(Indexs).to_csv(f'..\\Results\\ismisspecification={ismisspecification}\\modeltype={modeltype}\\n={samplesize}_p={p}\\Indexs\\repeat={repeat}.csv', index=False)
+
+    if not os.path.exists(f'..\\Results\\ismisspecification={ismisspecification}\\modeltype={modeltype}\\n={samplesize}_p={p}\\weights\\'):
+        os.makedirs(f'..\\Results\\ismisspecification={ismisspecification}\\modeltype={modeltype}\\n={samplesize}_p={p}\\weights\\')
+    weight_df.to_csv(f'..\\Results\\ismisspecification={ismisspecification}\\modeltype={modeltype}\\n={samplesize}_p={p}\\weights\\repeat={repeat}.csv', index=False)
+
+    return df
+
+
+
+
+
+def generate_data_fun(repeat, p, samplesize,ismisspecification=False):
+    # generate the data and parameters setting
+    # p is the dimension of beta
+    # q is the number of beta!=0
+    q = 50
+    if ismisspecification:
+        q=q+1
+        p=p+1
+
+
+    testsize = 10000
+    Mn = int(samplesize ** (1/3))
+    n = samplesize + testsize
+    np.random.seed(1000 * repeat)
+
+    mu = np.zeros(p)
+    mu[0:q] = 1
+    Sigma2 = np.eye(p) *1.2-np.ones((p, p)) * (0.2)
+    Y = np.random.binomial(n=1, p=0.5, size=n)
+    Y[Y == 0] = -1
+
+    X=np.random.multivariate_normal(mean=np.zeros(len(Sigma2)),cov=Sigma2,size=n)
+    X[Y == 1] = X[Y == 1] + mu
+    X[Y == -1] = X[Y == -1] - mu
+
+    Y_bayes = np.array([np.sign(np.sum(x[0:q-1])) for x in X])
+    Bayes_error = (Y_bayes != Y).mean()
+    X_train = X[0:samplesize, :]
+    Y_train = Y[0:samplesize]
+    X_pre = X[samplesize:, :]
+    Y_pre = Y[samplesize:]
+    S_true = {0, 1, 2, 3}
+
+    if ismisspecification:
+        inds=list(range(0,q-1))
+        inds.extend(list(range(q,X.shape[1])))
+    else:
+        inds=list(range(0,X.shape[1]))
+
+    return X_train[:,inds], Y_train, X_pre[:,inds], Y_pre, S_true, Mn,Bayes_error
+
+def generate_data_fun2(repeat, p, samplesize,ismisspecification=True):
+    # generate the data
+    q = 4
+    if ismisspecification:
+        q=q+1
+        p=p+1
+
+    testsize = 10000
+    Mn = int(samplesize ** (1/3))
+    n = samplesize + testsize
+    np.random.seed(1000 * repeat)
+
+    beta=np.zeros(p)
+    beta[0:q]=2
+
+    #genereate X
+    Sigma2=np.zeros((p,p))
+    for i in range(p):
+        for j in range(p):
+            Sigma2[i,j]=0.4**np.abs(i-j)
+    X=np.random.multivariate_normal(mean=np.zeros(len(Sigma2)),cov=Sigma2,size=n)
+
+    #generate Y
+    Y=np.random.binomial(n=1, p=stat.norm.cdf(np.dot(X, beta)), size=n)
+    Y[Y == 0] = -1
+
+    beta2=np.array([0.8,0.8,0.8,0.8,0.8]*30)[0:q]
+    Y_bayes = np.array([np.sign(np.dot(x[0:q],beta2) ) for x in X])
+    Bayes_error = (Y_bayes != Y).mean()
+    X_train = X[0:samplesize, :]
+    Y_train = Y[0:samplesize]
+    X_pre = X[samplesize:, :]
+    Y_pre = Y[samplesize:]
+    S_true = {0, 1, 2, 3}
+    if ismisspecification:
+        inds=list(range(0,q-1))
+        inds.extend(list(range(q,X.shape[1])))
+    else:
+        inds=list(range(0,X.shape[1]))
+
+    return X_train[:,inds], Y_train, X_pre[:,inds], Y_pre, S_true, Mn,Bayes_error
+
+
+def Tidy(samplesize, p,modeltype):
+    folder = os.path.abspath(f'..\\Results\\modeltype={modeltype}\\n={samplesize}_p={p}\\replication\\')
+    DF = pd.DataFrame()
+    for file in os.listdir(folder):
+        df = pd.read_csv(folder + '\\' + file, index_col=0)
+        DF = pd.concat([DF, df])
+    DF = DF.groupby(level=0).mean()
+    if not os.path.exists(f'..\\Results\\modeltype={modeltype}\\n={samplesize}_p={p}\\tidy_data\\'):
+        os.makedirs(f'..\\Results\\modeltype={modeltype}\\n={samplesize}_p={p}\\tidy_data\\')
+    DF.to_csv(f'..\\Results\\modeltype={modeltype}\\n={samplesize}_p={p}\\tidy_data\\meandata.csv', index=True)
+
+
+
+def work_fun(args):
+    samplesize, p, modeltype,ismisspecification, repeat=args
+    print(f'modeltpe={modeltype}_ismisspecification={ismisspecification}_repeat={repeat} start!')
+    if modeltype==1:
+        X_train, Y_train, X_pre, Y_pre, S_true, Mn,Bayes_error = generate_data_fun(repeat, p, samplesize,ismisspecification)
+    elif modeltype==2:
+        X_train, Y_train, X_pre, Y_pre, S_true, Mn,Bayes_error = generate_data_fun2(repeat, p, samplesize,ismisspecification)
+    else:
+        print('modeltype is wrong!')
+        return
+
+    print(f'Bayes_error:{Bayes_error}')
+    res = main(repeat, X_train, Y_train, X_pre, Y_pre, Mn, S_true,modeltype=modeltype,ismisspecification=ismisspecification)
+    print(f'modeltpe={modeltype}_ismisspecification={ismisspecification}_repeat={repeat} finished')
+
+
+class worker(Process):
+    def __init__(self, mission_queue):
+        Process.__init__(self)
+        self.mission_queue = mission_queue
+
+    def run(self):
+        while self.mission_queue.empty() == False:
+           work_fun(self.mission_queue.get())
+
+
+if __name__ == '__main__':
+    mission_queue = Queue()
+    modeltypeset=[1,2]
+
+    modelsettings =[(100,1000),(200,1000),(300,1000),(400,1000)]
+    ismisset=[True,False]
+    for n_p in modelsettings:
+        for modeltype in modeltypeset:
+            for repeat in range(20):
+                for ismisspecification in ismisset:
+                    mission_queue.put((n_p[0],n_p[1],modeltype,ismisspecification,repeat))
+
+    # multiprocess computing
+    Workers=[]
+    for i in range(10):
+        workrobot = worker(mission_queue)
+        workrobot.start()
+        Workers.append(workrobot)
+
+    for worker in Workers:
+        worker.join()
+
+    #generate figures
+    for modeltype in modeltypeset:
+        for ismisspecification in ismisset:
+            Figures=figure_file.SVMMAfigure(modelsettings, modeltype=modeltype,ismisspecification=ismisspecification)
+            Figures.tidy_fun()
+            Figures.figure_fun()
+
+    print('The program is finished!')
+import numpy as np
+
+
+def Select_Evaluation(bestmodel_ind, X_pre, Y_pre, Models, Indexs):
+    p = Indexs.shape[1]
+    results = dict()
+    results['bestmodel'] = bestmodel_ind
+    clfbest = Models[results['bestmodel']]
+    Y_res = clfbest.predict(X_pre[:, Indexs[results['bestmodel']]])
+    results['testerror'] = np.array((Y_res != Y_pre)).mean()
+    return results
+
+class SVMICL():
+    def __init__(self,HingesLoss,Indexs,Models,samplesize):
+        self.HingesLoss=HingesLoss
+        self.Indexs=Indexs
+        self.samplesize=samplesize
+        self.Models=Models
+        self.bestmodel_ind=None
+        self.SVMICL_scores=[]
+
+    def get_scores(self):
+        SVMICL_scores=[]
+        for hingeloss,index in zip(self.HingesLoss,self.Indexs):
+            SVMICL_scores.append(hingeloss + sum(index) * np.log(self.samplesize))
+        self.SVMICL_scores=SVMICL_scores
+
+    def get_bestmodel(self,m=1):
+        # model selection
+        if not self.SVMICL_scores:
+            self.get_scores()
+
+        inds=np.argsort(self.SVMICL_scores)
+        self.bestmodel_ind = inds[0:m]
+        return self.bestmodel_ind
+
+    def do_evaluation(self,X_pre,Y_pre):
+        if not self.SVMICL_scores:
+            self.get_scores()
+        if not self.bestmodel_ind:
+            self.get_bestmodel()
+        # evaluation
+        return Select_Evaluation(self.bestmodel_ind, X_pre, Y_pre, self.Models, self.Indexs)
+
+
+
+class SVMICH():
+    def __init__(self,HingesLoss,Indexs,Models,samplesize,Ln):
+        self.HingesLoss=HingesLoss
+        self.Indexs=Indexs
+        self.samplesize=samplesize
+        self.Models=Models
+        self.bestmodel_ind=None
+        self.Ln=Ln
+        self.SVMICH_scores=[]
+
+    def get_scores(self):
+        SVMICH_scores=[]
+        for hingeloss,index in zip(self.HingesLoss,self.Indexs):
+            SVMICH_scores.append(hingeloss + self.Ln * sum(index) * np.log(self.samplesize))
+        self.SVMICH_scores=SVMICH_scores
+
+    def get_bestmodel(self,m=1):
+        # model selection
+        if not self.SVMICH_scores:
+            self.get_scores()
+
+        inds=np.argsort(self.SVMICH_scores)
+        self.bestmodel_ind = inds[0:m]
+        return self.bestmodel_ind
+
+    def do_evaluation(self,X_pre,Y_pre):
+        if not self.SVMICH_scores:
+            self.get_scores()
+        if not self.bestmodel_ind:
+            self.get_bestmodel()
+        # evaluation
+        return Select_Evaluation(self.bestmodel_ind, X_pre, Y_pre, self.Models, self.Indexs)
+import numpy as np
+from sklearn import svm
+import select_method
+import scipy.stats as stat
+
+
+def SIC(bic):
+    # SBIC
+    sbic = np.array([1 / sum(np.exp((bic[s] - bic) / 2)) for s in range(len(bic))])
+    ind = np.where(sbic == np.inf)
+    sbic[ind] = max(sbic != np.inf) + 1e3
+    return sbic
+
+def addone(X):
+    return np.hstack((np.ones((len(X),1)),X))
+
+def Indexs_fun(p, Mn):
+    a = range(p)
+    Mn = min(Mn, p)
+    indexs = []
+    for i in range(1, Mn):
+        indexs += list(itertools.combinations(a, i))
+    Indexs = np.repeat(0, len(indexs) * p).reshape(len(indexs), p)
+    for i in range(len(indexs)):
+        Indexs[i, indexs[i]] = 1
+    # Indexs[:, 0:m] = 1
+    return Indexs == 1
+
+
+
+def Indexs_fun_lasso(X,Y,k=None):
+    # choose the first k features, and choose all the x defaultly
+    #sort the varibales by lasso, then nest to build up the first model set
+    if not k:
+        k=X.shape[1]
+    features_ind=[]
+    for lam in np.linspace(10,0.001,max(50,X.shape[1]//5)):
+        clf=svm.LinearSVC(C=lam,penalty='l1',dual=False,max_iter=10000)
+        # 注意C越小，penalty的压力越大
+        clf.fit(X,Y)
+        beta=clf.coef_[0]
+        beta_ind=np.where(beta==0)[0]
+        new=list(set(beta_ind)-set(features_ind))
+        features_ind.extend(new)
+    new=list(set(range(X.shape[1]))-set(features_ind))
+    features_ind.extend(new)
+    features_ind=features_ind[::-1]
+    features_ind=features_ind[0:k]
+
+    #build the candidate models by nest
+    Indexs=np.ones(X.shape[1])
+    for i in range(1,len(features_ind)+1):
+        ones=np.zeros(X.shape[1])
+        ones[features_ind[0:i]]=1
+        Indexs=np.vstack((Indexs,ones))
+    Indexs=Indexs[1:,:]
+    return Indexs==1
+
+
+
+
+def Indexs_fun_lasso_select(X,Y,C,k=None):
+    #k: the amount of candidate models
+    # step1：lasso to generate first model set
+    # step2: using cl, ch1, ch2, ch4 to choose k submodels to build up the final model set
+    ## step1:
+    if not k:
+        k=X.shape[1]
+    Indexs=Indexs_fun_lasso(X, Y, X.shape[1])
+    ## step2:
+    Models = []
+    Betas=[]
+    HingesLoss=[]
+    for index in Indexs:
+        clf=svm.LinearSVC(penalty='l2',loss='hinge', C=C)
+        X_train_s = X[:, index]
+        clf.fit(X_train_s, Y)
+        beta = np.hstack((clf.intercept_, clf.coef_[0]))
+        del clf
+        Betas.append(beta)
+        tmp = map(lambda x: max(x, 0), 1 - Y * np.dot(addone(X_train_s), beta))  # hinge loss
+        HingesLoss.append(sum(tmp))
+
+
+
+    CH_method=select_method.SVMICH(HingesLoss,Indexs,Models,X.shape[0],Ln=np.sqrt(np.log(X.shape[0])))
+    CH_method.get_scores()
+    model_inds=sorted(range(len(CH_method.SVMICH_scores)), key=lambda k: CH_method.SVMICH_scores[k]) [0:min(k,X.shape[1])] # 返回排序索引,从小到大排列
+    Indexs=Indexs[model_inds,:]
+    return Indexs
